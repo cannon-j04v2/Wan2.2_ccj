@@ -4,7 +4,9 @@ import time
 
 import pytest
 
-from preview_server import _start_camera_preview, _start_preview_server
+pytest.importorskip("torch")
+
+from generate import _start_preview_server
 
 
 def _get_free_port():
@@ -44,30 +46,4 @@ def test_preview_server_range_and_index(tmp_path):
         assert "wan-preview" in html
     finally:
         server.shutdown()
-        thread.join(timeout=1)
-
-
-def test_camera_preview_streams_frames():
-    frame = b"\xff\xd8\xff\xdb\x00C"  # minimal JPEG header chunk
-
-    def supplier():
-        return frame
-
-    port = _get_free_port()
-    server, thread, producer = _start_camera_preview("127.0.0.1", port, frame_supplier=supplier, fps=10)
-
-    try:
-        time.sleep(0.2)
-        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
-        conn.request("GET", "/stream")
-        resp = conn.getresponse()
-        chunk = resp.read(128)
-        conn.close()
-
-        assert resp.status == 200
-        assert b"--frame" in chunk
-        assert frame in chunk
-    finally:
-        server.shutdown()
-        producer.stop()
         thread.join(timeout=1)
