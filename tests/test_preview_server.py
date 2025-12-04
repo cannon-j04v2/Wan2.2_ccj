@@ -4,7 +4,9 @@ import time
 
 import pytest
 
-from preview_server import _start_preview_server
+pytest.importorskip("torch")
+
+from generate import _start_preview_server
 
 
 def _get_free_port():
