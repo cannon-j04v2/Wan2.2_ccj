@@ -15,15 +15,7 @@ warnings.filterwarnings('ignore')
 
 import random
 
-import torch
-import torch.distributed as dist
-from PIL import Image
-
-import wan
-from wan.configs import MAX_AREA_CONFIGS, SIZE_CONFIGS, SUPPORTED_SIZES, WAN_CONFIGS
-from wan.distributed.util import init_distributed_group
-from wan.utils.prompt_extend import DashScopePromptExpander, QwenPromptExpander
-from wan.utils.utils import merge_video_audio, save_video, str2bool
+from preview_server import _start_preview_server
 
 from preview_server import _start_preview_server
 
@@ -67,6 +59,8 @@ EXAMPLE_PROMPT = {
 
 
 def _validate_args(args):
+    from wan.configs import MAX_AREA_CONFIGS, SIZE_CONFIGS, SUPPORTED_SIZES, WAN_CONFIGS
+
     # Basic check
     assert args.ckpt_dir is not None, "Please specify the checkpoint directory."
     assert args.task in WAN_CONFIGS, f"Unsupport task: {args.task}"
@@ -110,6 +104,9 @@ def _validate_args(args):
 
 
 def _parse_args():
+    from wan.configs import MAX_AREA_CONFIGS, SIZE_CONFIGS, SUPPORTED_SIZES, WAN_CONFIGS
+    from wan.utils.utils import str2bool
+
     parser = argparse.ArgumentParser(
         description="Generate a image or video from a text prompt or image using Wan"
     )
@@ -436,6 +433,16 @@ def _init_logging(rank):
 
 
 def generate(args):
+    import torch
+    import torch.distributed as dist
+    from PIL import Image
+
+    import wan
+    from wan.configs import MAX_AREA_CONFIGS, SIZE_CONFIGS, WAN_CONFIGS
+    from wan.distributed.util import init_distributed_group
+    from wan.utils.prompt_extend import DashScopePromptExpander, QwenPromptExpander
+    from wan.utils.utils import merge_video_audio, save_video
+
     rank = int(os.getenv("RANK", 0))
     world_size = int(os.getenv("WORLD_SIZE", 1))
     local_rank = int(os.getenv("LOCAL_RANK", 0))
