@@ -97,6 +97,10 @@ Install dependencies:
 pip install -r requirements.txt
 # If you want to use CosyVoice to synthesize speech for Speech-to-Video Generation, please install requirements_s2v.txt additionally
 pip install -r requirements_s2v.txt
+# For the lightweight preview server smoke test only, you can simply `pip install pytest` and run
+# `python -m pytest tests/test_preview_server.py -q` without the full model dependencies.
+# For a camera-only Streamlabs check without Wan installs, install OpenCV (e.g., `pip install opencv-python`) and run
+# `python preview_server.py --camera` then point a browser source to http://127.0.0.1:17861/.
 ```
 
 

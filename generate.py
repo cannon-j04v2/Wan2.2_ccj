@@ -2,7 +2,9 @@
 import argparse
 import logging
 import os
+import re
 import sys
+import time
 import warnings
 from datetime import datetime
 
@@ -10,15 +12,7 @@ warnings.filterwarnings('ignore')
 
 import random
 
-import torch
-import torch.distributed as dist
-from PIL import Image
-
-import wan
-from wan.configs import MAX_AREA_CONFIGS, SIZE_CONFIGS, SUPPORTED_SIZES, WAN_CONFIGS
-from wan.distributed.util import init_distributed_group
-from wan.utils.prompt_extend import DashScopePromptExpander, QwenPromptExpander
-from wan.utils.utils import merge_video_audio, save_video, str2bool
+from preview_server import _start_preview_server
 
 
 EXAMPLE_PROMPT = {
@@ -60,6 +54,8 @@ EXAMPLE_PROMPT = {
 
 
 def _validate_args(args):
+    from wan.configs import MAX_AREA_CONFIGS, SIZE_CONFIGS, SUPPORTED_SIZES, WAN_CONFIGS
+
     # Basic check
     assert args.ckpt_dir is not None, "Please specify the checkpoint directory."
     assert args.task in WAN_CONFIGS, f"Unsupport task: {args.task}"
@@ -103,6 +99,9 @@ def _validate_args(args):
 
 
 def _parse_args():
+    from wan.configs import MAX_AREA_CONFIGS, SIZE_CONFIGS, SUPPORTED_SIZES, WAN_CONFIGS
+    from wan.utils.utils import str2bool
+
     parser = argparse.ArgumentParser(
         description="Generate a image or video from a text prompt or image using Wan"
     )
@@ -294,10 +293,36 @@ def _parse_args():
         default=80,
         help="Number of frames per clip, 48 or 80 or others (must be multiple of 4) for 14B s2v"
     )
+    parser.add_argument(
+        "--serve_html",
+        action="store_true",
+        default=False,
+        help="Serve the generated video over a lightweight local HTTP server for browser/Streamlabs preview.",
+    )
+    parser.add_argument(
+        "--serve_host",
+        type=str,
+        default="127.0.0.1",
+        help="Host interface for the preview server.",
+    )
+    parser.add_argument(
+        "--serve_port",
+        type=int,
+        default=17860,
+        help="Port for the preview server.",
+    )
+    parser.add_argument(
+        "--serve_duration",
+        type=int,
+        default=None,
+        help="Optional duration (seconds) to keep the preview server alive; if omitted it blocks until interrupted.",
+    )
     args = parser.parse_args()
     _validate_args(args)
 
     return args
+
+
 
 
 def _init_logging(rank):
@@ -313,6 +338,16 @@ def _init_logging(rank):
 
 
 def generate(args):
+    import torch
+    import torch.distributed as dist
+    from PIL import Image
+
+    import wan
+    from wan.configs import MAX_AREA_CONFIGS, SIZE_CONFIGS, WAN_CONFIGS
+    from wan.distributed.util import init_distributed_group
+    from wan.utils.prompt_extend import DashScopePromptExpander, QwenPromptExpander
+    from wan.utils.utils import merge_video_audio, save_video
+
     rank = int(os.getenv("RANK", 0))
     world_size = int(os.getenv("WORLD_SIZE", 1))
     local_rank = int(os.getenv("LOCAL_RANK", 0))
@@ -560,6 +595,25 @@ def generate(args):
                 merge_video_audio(video_path=args.save_file, audio_path=args.audio)
             else:
                 merge_video_audio(video_path=args.save_file, audio_path="tts.wav")
+        if args.serve_html:
+            try:
+                httpd, thread = _start_preview_server(
+                    video_path=args.save_file, host=args.serve_host, port=args.serve_port)
+            except OSError as exc:
+                logging.error(f"Failed to start preview server: {exc}")
+            else:
+                logging.info(
+                    f"Preview server ready at http://{args.serve_host}:{args.serve_port}/ (use as a Streamlabs browser source)."
+                )
+                try:
+                    if args.serve_duration is not None:
+                        time.sleep(args.serve_duration)
+                    else:
+                        thread.join()
+                except KeyboardInterrupt:
+                    logging.info("Preview server interrupted by user.")
+                finally:
+                    httpd.shutdown()
     del video
 
     torch.cuda.synchronize()
